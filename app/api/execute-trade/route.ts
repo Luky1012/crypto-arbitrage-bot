@@ -35,6 +35,7 @@ async function executeOKXOrder(
   apiKey: string | undefined,
   secretKey: string | undefined,
   passphrase: string | undefined,
+  availableBalance: number
 ) {
   try {
     // Validate API credentials with detailed error reporting
@@ -61,6 +62,44 @@ async function executeOKXOrder(
       }
     }
 
+    // Check if balance is sufficient for the trade
+    if (side === "buy" && availableBalance < 1) {
+      return {
+        success: false,
+        error: `OKX Error: Insufficient balance - Available: ${availableBalance} USDT, Required: at least 1 USDT`,
+        details: {
+          availableBalance,
+          requiredAmount: amount,
+          errorType: "insufficient_balance"
+        }
+      };
+    }
+
+    // Adjust amount if needed to stay within balance limits (for buy orders)
+    let adjustedAmount = amount;
+    if (side === "buy") {
+      // Ensure we don't use more than 90% of available balance to account for fees
+      const maxAmount = Math.floor((availableBalance * 0.9) / amount) * amount;
+      if (maxAmount < amount) {
+        console.log(`Adjusting buy amount from ${amount} to ${maxAmount} due to balance constraints`);
+        adjustedAmount = maxAmount;
+        
+        // If adjusted amount is too small, return error
+        if (adjustedAmount <= 0) {
+          return {
+            success: false,
+            error: `OKX Error: Available balance (${availableBalance} USDT) too low for minimum trade`,
+            details: {
+              availableBalance,
+              originalAmount: amount,
+              adjustedAmount,
+              errorType: "insufficient_balance"
+            }
+          };
+        }
+      }
+    }
+
     const timestamp = new Date().toISOString()
     const method = "POST"
     const requestPath = "/api/v5/trade/order"
@@ -69,7 +108,7 @@ async function executeOKXOrder(
       tdMode: "cash",
       side,
       ordType: "market",
-      sz: amount.toString(),
+      sz: adjustedAmount.toString(),
     }
     const body = JSON.stringify(orderData)
     
@@ -210,7 +249,7 @@ async function executeOKXOrder(
             "51002": "Order quantity too small",
             "51003": "Order price out of permissible range",
             "51004": "Insufficient balance to place order",
-            "51008": "Order placement failed - service unavailable",
+            "51008": "Order failed. Your available USDT balance is insufficient",
             "51009": "Exceeded order limit - too many orders",
             "51012": "Trading suspended for this instrument",
             "51022": "Trading not yet started for this instrument",
@@ -221,6 +260,14 @@ async function executeOKXOrder(
             detailedError = errorCodeMap[result.code];
           } else if (result.msg) {
             detailedError = result.msg;
+          }
+          
+          // Check for specific error in data array
+          if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+            const firstError = result.data[0];
+            if (firstError.sCode && firstError.sMsg) {
+              detailedError = `${firstError.sMsg} (Code: ${firstError.sCode})`;
+            }
           }
           
           return {
@@ -334,6 +381,7 @@ async function executeKuCoinOrder(
   apiKey: string | undefined,
   secretKey: string | undefined,
   passphrase: string | undefined,
+  availableBalance: number
 ) {
   try {
     // Validate API credentials with detailed error reporting
@@ -360,6 +408,44 @@ async function executeKuCoinOrder(
       }
     }
 
+    // Check if balance is sufficient for the trade
+    if (side === "buy" && availableBalance < 1) {
+      return {
+        success: false,
+        error: `KuCoin Error: Insufficient balance - Available: ${availableBalance} USDT, Required: at least 1 USDT`,
+        details: {
+          availableBalance,
+          requiredAmount: amount,
+          errorType: "insufficient_balance"
+        }
+      };
+    }
+
+    // Adjust amount if needed to stay within balance limits (for buy orders)
+    let adjustedAmount = amount;
+    if (side === "buy") {
+      // Ensure we don't use more than 90% of available balance to account for fees
+      const maxAmount = Math.floor((availableBalance * 0.9) / amount) * amount;
+      if (maxAmount < amount) {
+        console.log(`Adjusting buy amount from ${amount} to ${maxAmount} due to balance constraints`);
+        adjustedAmount = maxAmount;
+        
+        // If adjusted amount is too small, return error
+        if (adjustedAmount <= 0) {
+          return {
+            success: false,
+            error: `KuCoin Error: Available balance (${availableBalance} USDT) too low for minimum trade`,
+            details: {
+              availableBalance,
+              originalAmount: amount,
+              adjustedAmount,
+              errorType: "insufficient_balance"
+            }
+          };
+        }
+      }
+    }
+
     const timestamp = Date.now().toString()
     const method = "POST"
     const requestPath = "/api/v1/orders"
@@ -367,7 +453,7 @@ async function executeKuCoinOrder(
       symbol: `${symbol}-USDT`,
       side,
       type: "market",
-      size: amount.toString(),
+      size: adjustedAmount.toString(),
     }
     const body = JSON.stringify(orderData)
     
@@ -624,6 +710,59 @@ async function executeKuCoinOrder(
   }
 }
 
+// Helper function to fetch balances
+async function fetchBalances(
+  okxApiKey: string | undefined,
+  okxSecretKey: string | undefined,
+  okxPassphrase: string | undefined,
+  kucoinApiKey: string | undefined,
+  kucoinSecretKey: string | undefined,
+  kucoinPassphrase: string | undefined
+) {
+  try {
+    const response = await fetch('/api/balances', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error(`Balance fetch failed: ${response.status} ${response.statusText}`);
+      return {
+        success: false,
+        balances: {
+          OKX: 0,
+          KuCoin: 0
+        },
+        error: `Failed to fetch balances: HTTP ${response.status}`
+      };
+    }
+    
+    const result = await response.json();
+    console.log("Balance fetch result:", result);
+    
+    return {
+      success: true,
+      balances: {
+        OKX: result.okx.success ? (result.okx.balances.USDT || 0) : 0,
+        KuCoin: result.kucoin.success ? (result.kucoin.balances.USDT || 0) : 0
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error("Balance fetch error:", error);
+    return {
+      success: false,
+      balances: {
+        OKX: 0,
+        KuCoin: 0
+      },
+      error: `Failed to fetch balances: ${error.message}`
+    };
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { symbol, amount, buyExchange, sellExchange, tradeId } = await request.json()
@@ -759,14 +898,55 @@ export async function POST(request: Request) {
       )
     }
 
+    // Fetch balances from both exchanges
+    console.log("Fetching balances before trade execution...");
+    const balanceResult = await fetch('/api/balances', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }).then(res => res.json()).catch(err => {
+      console.error("Balance fetch error:", err);
+      return {
+        okx: { success: false, balances: { USDT: 0 } },
+        kucoin: { success: false, balances: { USDT: 0 } }
+      };
+    });
+    
+    console.log("Balance result:", balanceResult);
+    
+    // Extract balances
+    const okxBalance = balanceResult.okx.success ? (balanceResult.okx.balances.USDT || 0) : 0;
+    const kucoinBalance = balanceResult.kucoin.success ? (balanceResult.kucoin.balances.USDT || 0) : 0;
+    
+    console.log(`Available balances - OKX: ${okxBalance} USDT, KuCoin: ${kucoinBalance} USDT`);
+    
+    // Check if buy exchange has sufficient balance
+    const buyBalance = buyExchange === "OKX" ? okxBalance : kucoinBalance;
+    if (buyBalance < 1) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Insufficient balance on ${buyExchange} - Available: ${buyBalance} USDT, Required: at least 1 USDT`,
+          details: {
+            exchange: buyExchange,
+            availableBalance: buyBalance,
+            requiredAmount: amount,
+            errorType: "insufficient_balance"
+          }
+        },
+        { status: 400 }
+      )
+    }
+
     let buyResult, sellResult
     
-    // Execute buy order
+    // Execute buy order with balance check
     console.log(`Executing buy order on ${buyExchange}...`)
     if (buyExchange === "OKX") {
-      buyResult = await executeOKXOrder(symbol, "buy", amount, okxApiKey, okxSecretKey, okxPassphrase)
+      buyResult = await executeOKXOrder(symbol, "buy", amount, okxApiKey, okxSecretKey, okxPassphrase, okxBalance)
     } else {
-      buyResult = await executeKuCoinOrder(symbol, "buy", amount, kucoinApiKey, kucoinSecretKey, kucoinPassphrase)
+      buyResult = await executeKuCoinOrder(symbol, "buy", amount, kucoinApiKey, kucoinSecretKey, kucoinPassphrase, kucoinBalance)
     }
     console.log("Buy order result:", JSON.stringify({
       success: buyResult.success,
@@ -780,10 +960,14 @@ export async function POST(request: Request) {
       console.log("Buy order successful, waiting 2 seconds before sell order...")
       await new Promise((resolve) => setTimeout(resolve, 2000))
       console.log(`Executing sell order on ${sellExchange}...`)
+      
+      // For sell orders, we don't need to check balance since we're selling what we just bought
+      const sellBalance = sellExchange === "OKX" ? okxBalance : kucoinBalance;
+      
       if (sellExchange === "OKX") {
-        sellResult = await executeOKXOrder(symbol, "sell", amount, okxApiKey, okxSecretKey, okxPassphrase)
+        sellResult = await executeOKXOrder(symbol, "sell", amount, okxApiKey, okxSecretKey, okxPassphrase, sellBalance)
       } else {
-        sellResult = await executeKuCoinOrder(symbol, "sell", amount, kucoinApiKey, kucoinSecretKey, kucoinPassphrase)
+        sellResult = await executeKuCoinOrder(symbol, "sell", amount, kucoinApiKey, kucoinSecretKey, kucoinPassphrase, sellBalance)
       }
     } else {
       console.log("Buy order failed, skipping sell order")
@@ -815,6 +999,10 @@ export async function POST(request: Request) {
       sellData: sellResult.data,
       tradeId,
       timestamp: new Date().toISOString(),
+      balances: {
+        [buyExchange]: buyBalance,
+        [sellExchange]: sellExchange === buyExchange ? buyBalance : (sellExchange === "OKX" ? okxBalance : kucoinBalance)
+      },
       errors: {
         buy: buyResult.error,
         sell: sellResult.error,
