@@ -19,7 +19,12 @@ function createKuCoinSignature(
 }
 
 function createKuCoinPassphraseSignature(passphrase: string, secretKey: string) {
-  return crypto.createHmac("sha256", secretKey).update(message).digest("base64")
+  try {
+    return crypto.createHmac("sha256", secretKey).update(passphrase).digest("base64")
+  } catch (error: any) {
+    console.error("Error creating KuCoin passphrase signature:", error);
+    throw new Error(`Failed to create KuCoin passphrase signature: ${error.message}`);
+  }
 }
 
 // Enhanced error handling for OKX orders with comprehensive debugging
@@ -123,18 +128,35 @@ async function executeOKXOrder(
         
         try {
           responseText = await response.text();
-          result = JSON.parse(responseText);
-        } catch (parseError: any) {
-          console.error("OKX response parsing error:", parseError);
+          console.log(`OKX ${side} raw response:`, responseText);
+          
+          try {
+            result = JSON.parse(responseText);
+          } catch (jsonError: any) {
+            console.error("OKX JSON parsing error:", jsonError);
+            return {
+              success: false,
+              error: `OKX Error: Invalid JSON response - ${jsonError.message}`,
+              details: {
+                httpStatus: response.status,
+                httpStatusText: response.statusText,
+                responseText,
+                parseError: jsonError.message,
+                errorType: "json_parse_error",
+                requestDetails
+              }
+            };
+          }
+        } catch (textError: any) {
+          console.error("OKX response text extraction error:", textError);
           return {
             success: false,
-            error: `OKX Error: Failed to parse response - ${parseError.message}`,
+            error: `OKX Error: Failed to extract response text - ${textError.message}`,
             details: {
               httpStatus: response.status,
               httpStatusText: response.statusText,
-              responseText,
-              parseError: parseError.message,
-              errorType: "response_parse_error",
+              parseError: textError.message,
+              errorType: "response_text_error",
               requestDetails
             }
           };
@@ -146,13 +168,29 @@ async function executeOKXOrder(
         if (!response.ok) {
           return {
             success: false,
-            error: `OKX Error: HTTP ${response.status} - ${response.statusText}`,
+            error: `OKX Error: HTTP ${response.status} - ${response.statusText} - Raw response: ${responseText}`,
             details: {
               httpStatus: response.status,
               httpStatusText: response.statusText,
               responseBody: result,
+              rawResponse: responseText,
               responseHeaders: responseStatus.headers,
               errorType: "http_error",
+              requestDetails
+            }
+          }
+        }
+        
+        // Handle case where result is null or undefined
+        if (!result) {
+          return {
+            success: false,
+            error: `OKX Error: Empty response received - Raw response: ${responseText}`,
+            details: {
+              httpStatus: response.status,
+              httpStatusText: response.statusText,
+              rawResponse: responseText,
+              errorType: "empty_response",
               requestDetails
             }
           }
@@ -175,7 +213,8 @@ async function executeOKXOrder(
             "51008": "Order placement failed - service unavailable",
             "51009": "Exceeded order limit - too many orders",
             "51012": "Trading suspended for this instrument",
-            "51022": "Trading not yet started for this instrument"
+            "51022": "Trading not yet started for this instrument",
+            "1": "General error - see raw response for details"
           };
           
           if (result.code in errorCodeMap) {
@@ -186,13 +225,14 @@ async function executeOKXOrder(
           
           return {
             success: false,
-            error: `OKX Error: ${detailedError} (Code: ${result.code})`,
+            error: `OKX Error: ${detailedError} (Code: ${result.code}) - Raw response: ${responseText}`,
             details: {
               code: result.code,
               message: result.msg,
               orderData,
               errorType: "api_error",
               responseBody: result,
+              rawResponse: responseText,
               requestDetails
             }
           }
@@ -202,12 +242,13 @@ async function executeOKXOrder(
         if (!result.data || !result.data[0] || !result.data[0].ordId) {
           return {
             success: false,
-            error: "OKX Error: Order response missing order ID",
+            error: `OKX Error: Order response missing order ID - Raw response: ${responseText}`,
             details: {
               responseData: result.data,
               orderData,
               errorType: "missing_order_id",
               responseBody: result,
+              rawResponse: responseText,
               requestDetails
             }
           }
@@ -224,6 +265,7 @@ async function executeOKXOrder(
             message: result.msg,
             orderData,
             responseBody: result,
+            rawResponse: responseText,
           },
         }
       } catch (fetchError: any) {
@@ -388,18 +430,35 @@ async function executeKuCoinOrder(
         
         try {
           responseText = await response.text();
-          result = JSON.parse(responseText);
-        } catch (parseError: any) {
-          console.error("KuCoin response parsing error:", parseError);
+          console.log(`KuCoin ${side} raw response:`, responseText);
+          
+          try {
+            result = JSON.parse(responseText);
+          } catch (jsonError: any) {
+            console.error("KuCoin JSON parsing error:", jsonError);
+            return {
+              success: false,
+              error: `KuCoin Error: Invalid JSON response - ${jsonError.message} - Raw response: ${responseText}`,
+              details: {
+                httpStatus: response.status,
+                httpStatusText: response.statusText,
+                responseText,
+                parseError: jsonError.message,
+                errorType: "json_parse_error",
+                requestDetails
+              }
+            };
+          }
+        } catch (textError: any) {
+          console.error("KuCoin response text extraction error:", textError);
           return {
             success: false,
-            error: `KuCoin Error: Failed to parse response - ${parseError.message}`,
+            error: `KuCoin Error: Failed to extract response text - ${textError.message}`,
             details: {
               httpStatus: response.status,
               httpStatusText: response.statusText,
-              responseText,
-              parseError: parseError.message,
-              errorType: "response_parse_error",
+              parseError: textError.message,
+              errorType: "response_text_error",
               requestDetails
             }
           };
@@ -411,13 +470,29 @@ async function executeKuCoinOrder(
         if (!response.ok) {
           return {
             success: false,
-            error: `KuCoin Error: HTTP ${response.status} - ${response.statusText}`,
+            error: `KuCoin Error: HTTP ${response.status} - ${response.statusText} - Raw response: ${responseText}`,
             details: {
               httpStatus: response.status,
               httpStatusText: response.statusText,
               responseBody: result,
+              rawResponse: responseText,
               responseHeaders: responseStatus.headers,
               errorType: "http_error",
+              requestDetails
+            }
+          }
+        }
+        
+        // Handle case where result is null or undefined
+        if (!result) {
+          return {
+            success: false,
+            error: `KuCoin Error: Empty response received - Raw response: ${responseText}`,
+            details: {
+              httpStatus: response.status,
+              httpStatusText: response.statusText,
+              rawResponse: responseText,
+              errorType: "empty_response",
               requestDetails
             }
           }
@@ -448,13 +523,14 @@ async function executeKuCoinOrder(
           
           return {
             success: false,
-            error: `KuCoin Error: ${detailedError} (Code: ${result.code})`,
+            error: `KuCoin Error: ${detailedError} (Code: ${result.code}) - Raw response: ${responseText}`,
             details: {
               code: result.code,
               message: result.msg || result.message,
               orderData,
               errorType: "api_error",
               responseBody: result,
+              rawResponse: responseText,
               requestDetails
             }
           }
@@ -464,12 +540,13 @@ async function executeKuCoinOrder(
         if (!result.data || !result.data.orderId) {
           return {
             success: false,
-            error: "KuCoin Error: Order response missing order ID",
+            error: `KuCoin Error: Order response missing order ID - Raw response: ${responseText}`,
             details: {
               responseData: result.data,
               orderData,
               errorType: "missing_order_id",
               responseBody: result,
+              rawResponse: responseText,
               requestDetails
             }
           }
@@ -486,6 +563,7 @@ async function executeKuCoinOrder(
             message: result.msg || result.message,
             orderData,
             responseBody: result,
+            rawResponse: responseText,
           },
         }
       } catch (fetchError: any) {
@@ -711,7 +789,7 @@ export async function POST(request: Request) {
       console.log("Buy order failed, skipping sell order")
       sellResult = {
         success: false,
-        error: "Buy order failed, sell order not executed",
+        error: `Buy order failed, sell order not executed. Buy error: ${buyResult.error}`,
         details: { 
           reason: "buy_order_failed",
           buyError: buyResult.error,
