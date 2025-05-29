@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: crypto-arbitrage-bot
+    env: node
+    region: frankfurt
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    nodeVersion: 20.x
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    autoDeploy: true
+    healthCheckPath: /
