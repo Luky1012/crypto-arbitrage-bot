@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowDownIcon, ArrowUpIcon, RefreshCwIcon } from "lucide-react"
+import { ArrowDownIcon, ArrowUpIcon, RefreshCwIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 // Define types for better type safety
@@ -43,6 +43,7 @@ interface Trade {
     buy?: string
     sell?: string
   }
+  rawResponse?: any // For storing the complete raw response
 }
 
 interface BalanceInfo {
@@ -57,6 +58,15 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false)
   const [balances, setBalances] = useState<BalanceInfo>({ OKX: 0, KuCoin: 0 })
   const [error, setError] = useState<string | null>(null)
+  const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
+
+  // Toggle error expansion for a specific trade
+  const toggleErrorExpansion = (tradeId: string) => {
+    setExpandedErrors(prev => ({
+      ...prev,
+      [tradeId]: !prev[tradeId]
+    }));
+  };
 
   // Fetch prices on component mount and when refresh is triggered
   useEffect(() => {
@@ -189,6 +199,9 @@ export default function Home() {
 
       const result = await response.json()
 
+      // Store the complete raw response for debugging
+      console.log("Complete trade execution response:", result);
+
       // Update the trade with the result
       setTrades((prevTrades) =>
         prevTrades.map((trade) => {
@@ -199,6 +212,7 @@ export default function Home() {
               buyExecuted: result.buyExecuted || false,
               sellExecuted: result.sellExecuted || false,
               errors: result.errors || {},
+              rawResponse: result // Store the complete raw response
             }
           }
           return trade
@@ -256,6 +270,76 @@ export default function Home() {
     // Check if we have enough balance
     return buyExchangeBalance >= requiredAmountWithFees
   }
+
+  // Function to extract and format error details from raw response
+  const getDetailedErrorMessage = (trade: Trade, errorType: 'buy' | 'sell') => {
+    if (!trade.errors || !trade.errors[errorType]) {
+      return "No error details available";
+    }
+
+    // Get the basic error message
+    const errorMessage = trade.errors[errorType] || "";
+
+    // If there's no raw response, just return the basic error
+    if (!trade.rawResponse) {
+      return errorMessage;
+    }
+
+    // Try to extract more detailed information from the raw response
+    try {
+      let detailedInfo = "";
+      
+      // For buy errors
+      if (errorType === 'buy' && trade.rawResponse.details?.buy) {
+        const buyDetails = trade.rawResponse.details.buy;
+        
+        if (buyDetails.errorType) {
+          detailedInfo += `\nError Type: ${buyDetails.errorType}`;
+        }
+        
+        if (buyDetails.code) {
+          detailedInfo += `\nError Code: ${buyDetails.code}`;
+        }
+        
+        if (buyDetails.message) {
+          detailedInfo += `\nMessage: ${buyDetails.message}`;
+        }
+        
+        // Include raw response if available
+        if (buyDetails.rawResponse) {
+          detailedInfo += `\n\nRaw Response: ${buyDetails.rawResponse}`;
+        }
+      }
+      
+      // For sell errors
+      if (errorType === 'sell' && trade.rawResponse.details?.sell) {
+        const sellDetails = trade.rawResponse.details.sell;
+        
+        if (sellDetails.errorType) {
+          detailedInfo += `\nError Type: ${sellDetails.errorType}`;
+        }
+        
+        if (sellDetails.code) {
+          detailedInfo += `\nError Code: ${sellDetails.code}`;
+        }
+        
+        if (sellDetails.message) {
+          detailedInfo += `\nMessage: ${sellDetails.message}`;
+        }
+        
+        // Include raw response if available
+        if (sellDetails.rawResponse) {
+          detailedInfo += `\n\nRaw Response: ${sellDetails.rawResponse}`;
+        }
+      }
+      
+      // If we found detailed info, append it to the error message
+      return detailedInfo ? `${errorMessage}${detailedInfo}` : errorMessage;
+    } catch (e) {
+      console.error("Error parsing detailed error information:", e);
+      return errorMessage;
+    }
+  };
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -445,10 +529,25 @@ export default function Home() {
                       Sell: {trade.sellExecuted ? "Executed" : "Failed"}
                     </span>
                   </div>
-                  {/* Error Details */}
+                  
+                  {/* Enhanced Error Details with Expansion */}
                   {(trade.errors?.buy || trade.errors?.sell) && (
                     <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs">
-                      <p className="font-medium text-red-800 mb-1">Error Details:</p>
+                      <div className="flex justify-between items-center">
+                        <p className="font-medium text-red-800 mb-1">Error Details:</p>
+                        <button 
+                          onClick={() => toggleErrorExpansion(trade.id)}
+                          className="text-red-800 hover:text-red-600 focus:outline-none"
+                        >
+                          {expandedErrors[trade.id] ? (
+                            <ChevronUpIcon className="h-4 w-4" />
+                          ) : (
+                            <ChevronDownIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      
+                      {/* Basic Error Display (Always Visible) */}
                       {trade.errors.buy && (
                         <p className="text-red-700">
                           <span className="font-medium">Buy Error:</span> {trade.errors.buy}
@@ -458,6 +557,41 @@ export default function Home() {
                         <p className="text-red-700">
                           <span className="font-medium">Sell Error:</span> {trade.errors.sell}
                         </p>
+                      )}
+                      
+                      {/* Expanded Detailed Error Information */}
+                      {expandedErrors[trade.id] && (
+                        <div className="mt-2 p-2 bg-red-100 rounded whitespace-pre-wrap">
+                          <p className="font-medium mb-1">Detailed Error Information:</p>
+                          
+                          {trade.errors.buy && (
+                            <div className="mb-2">
+                              <p className="font-medium">Buy Error Details:</p>
+                              <pre className="text-xs overflow-auto max-h-40 p-1">
+                                {getDetailedErrorMessage(trade, 'buy')}
+                              </pre>
+                            </div>
+                          )}
+                          
+                          {trade.errors.sell && (
+                            <div>
+                              <p className="font-medium">Sell Error Details:</p>
+                              <pre className="text-xs overflow-auto max-h-40 p-1">
+                                {getDetailedErrorMessage(trade, 'sell')}
+                              </pre>
+                            </div>
+                          )}
+                          
+                          {/* Raw Response Display */}
+                          {trade.rawResponse && (
+                            <div className="mt-2">
+                              <p className="font-medium">Complete API Response:</p>
+                              <pre className="text-xs overflow-auto max-h-40 p-1 bg-white">
+                                {JSON.stringify(trade.rawResponse, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
