@@ -22,14 +22,14 @@ function createKuCoinPassphraseSignature(passphrase: string, secretKey: string) 
   return crypto.createHmac("sha256", secretKey).update(passphrase).digest("base64")
 }
 
-// Detailed error handling for OKX orders
+// Detailed error handling for OKX orders with proper TypeScript typing
 async function executeOKXOrder(
   symbol: string,
   side: "buy" | "sell",
   amount: number,
-  apiKey: string,
-  secretKey: string,
-  passphrase: string,
+  apiKey: string | undefined,
+  secretKey: string | undefined,
+  passphrase: string | undefined,
 ) {
   try {
     // Validate API credentials
@@ -158,7 +158,7 @@ async function executeOKXOrder(
           orderData,
         },
       }
-    } catch (fetchError) {
+    } catch (fetchError: any) {
       clearTimeout(timeoutId)
       
       // Handle timeout errors specifically
@@ -184,7 +184,7 @@ async function executeOKXOrder(
         }
       }
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("OKX order error:", error)
     return {
       success: false,
@@ -198,14 +198,14 @@ async function executeOKXOrder(
   }
 }
 
-// Detailed error handling for KuCoin orders
+// Detailed error handling for KuCoin orders with proper TypeScript typing
 async function executeKuCoinOrder(
   symbol: string,
   side: "buy" | "sell",
   amount: number,
-  apiKey: string,
-  secretKey: string,
-  passphrase: string,
+  apiKey: string | undefined,
+  secretKey: string | undefined,
+  passphrase: string | undefined,
 ) {
   try {
     // Validate API credentials
@@ -332,7 +332,7 @@ async function executeKuCoinOrder(
           orderData,
         },
       }
-    } catch (fetchError) {
+    } catch (fetchError: any) {
       clearTimeout(timeoutId)
       
       // Handle timeout errors specifically
@@ -358,7 +358,7 @@ async function executeKuCoinOrder(
         }
       }
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("KuCoin order error:", error)
     return {
       success: false,
@@ -436,12 +436,12 @@ export async function POST(request: Request) {
       )
     }
     
-    const okxApiKey = process.env.OKX_API_KEY!
-    const okxSecretKey = process.env.OKX_SECRET_KEY!
-    const okxPassphrase = process.env.OKX_PASSPHRASE!
-    const kucoinApiKey = process.env.KUCOIN_API_KEY!
-    const kucoinSecretKey = process.env.KUCOIN_SECRET_KEY!
-    const kucoinPassphrase = process.env.KUCOIN_PASSPHRASE!
+    const okxApiKey = process.env.OKX_API_KEY
+    const okxSecretKey = process.env.OKX_SECRET_KEY
+    const okxPassphrase = process.env.OKX_PASSPHRASE
+    const kucoinApiKey = process.env.KUCOIN_API_KEY
+    const kucoinSecretKey = process.env.KUCOIN_SECRET_KEY
+    const kucoinPassphrase = process.env.KUCOIN_PASSPHRASE
     
     // Check if API keys are configured
     if ((buyExchange === "OKX" || sellExchange === "OKX") && 
@@ -541,7 +541,7 @@ export async function POST(request: Request) {
     }
     console.log("Final trade response:", response)
     return NextResponse.json(response)
-  } catch (error) {
+  } catch (error: any) {
     console.error("Trade execution error:", error)
     return NextResponse.json(
       {

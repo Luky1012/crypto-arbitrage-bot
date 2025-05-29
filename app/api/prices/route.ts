@@ -29,11 +29,18 @@ const MAX_PROFIT_PERCENT = 50
 // Minimum price difference to consider an opportunity valid (in USDT)
 const MIN_PRICE_DIFF = 0.0001
 
+// Define TypeScript interface for OKX ticker
+interface OKXTicker {
+  instId?: string;
+  last?: string;
+  [key: string]: any;
+}
+
 export async function GET() {
   try {
     console.log("Fetching prices from exchanges...")
     // OKX API
-    let okxData = null
+    let okxData: any = null
     try {
       console.log("Fetching OKX prices...")
       const okxController = new AbortController()
@@ -73,7 +80,7 @@ export async function GET() {
       } else {
         console.error(`OKX alternative API also failed: ${okxResponse.status} ${okxResponse.statusText}`)
       }
-    } catch (okxError) {
+    } catch (okxError: any) {
       console.error("OKX fetch failed:", okxError.message)
       // Try one more time with a different approach
       try {
@@ -83,12 +90,12 @@ export async function GET() {
           okxData = await basicResponse.json()
           console.log("OKX basic fetch succeeded")
         }
-      } catch (basicError) {
+      } catch (basicError: any) {
         console.error("OKX basic fetch also failed:", basicError.message)
       }
     }
     // KuCoin API
-    let kucoinData = null
+    let kucoinData: any = null
     try {
       console.log("Fetching KuCoin prices...")
       const kucoinController = new AbortController()
@@ -130,7 +137,7 @@ export async function GET() {
       } else {
         console.error(`KuCoin alternative API also failed: ${kucoinResponse.status} ${kucoinResponse.statusText}`)
       }
-    } catch (kucoinError) {
+    } catch (kucoinError: any) {
       console.error("KuCoin fetch failed:", kucoinError.message)
       // Try one more time with a different approach
       try {
@@ -140,7 +147,7 @@ export async function GET() {
           kucoinData = await basicResponse.json()
           console.log("KuCoin basic fetch succeeded")
         }
-      } catch (basicError) {
+      } catch (basicError: any) {
         console.error("KuCoin basic fetch also failed:", basicError.message)
       }
     }
@@ -152,7 +159,7 @@ export async function GET() {
     const okxPrices = new Map<string, number>()
     if (okxData?.data && Array.isArray(okxData.data)) {
       let okxProcessed = 0
-      okxData.data.forEach((ticker: any) => {
+      okxData.data.forEach((ticker: OKXTicker) => {
         if (ticker.instId && ticker.instId.endsWith("-USDT") && ticker.last) {
           const symbol = ticker.instId.replace("-USDT", "")
           const price = Number.parseFloat(ticker.last)
@@ -192,20 +199,20 @@ export async function GET() {
     const OKX_FEE = 0.001 // 0.1%
     const KUCOIN_FEE = 0.001 // 0.1%
     
+    // Helper function to calculate trade amount
+    const getTradeAmount = (price: number) => {
+      if (price < 0.01) return 100
+      if (price < 0.1) return 50
+      if (price < 1) return 10
+      return 1
+    }
+    
     for (const symbol of commonSymbols) {
       const okxPrice = okxPrices.get(symbol)!
       const kucoinPrice = kucoinPrices.get(symbol)!
       const priceDiff = Math.abs(okxPrice - kucoinPrice)
       const avgPrice = (okxPrice + kucoinPrice) / 2
       const profitPercent = (priceDiff / avgPrice) * 100
-      
-      // Calculate estimated trading amount based on price
-      const getTradeAmount = (price: number) => {
-        if (price < 0.01) return 100
-        if (price < 0.1) return 50
-        if (price < 1) return 10
-        return 1
-      }
       
       const amount = getTradeAmount(Math.min(okxPrice, kucoinPrice))
       const buyExchange = okxPrice < kucoinPrice ? "OKX" : "KuCoin"
@@ -255,7 +262,7 @@ export async function GET() {
         minNetProfit: 0.01
       }
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Critical error in price fetch:", error)
     return NextResponse.json(
       {
